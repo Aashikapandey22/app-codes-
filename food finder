@@ -1,0 +1,169 @@
+
+import React, { useState, useEffect } from 'react';
+import { Search, MapPin, Tag, Flame, Clock, Navigation } from 'lucide-react';
+import { GlassCard, Badge, SkeletonCard, ThreeDMapWidget } from './UI';
+import { Place, GeoLocation } from '../types';
+import { getQuickNutritionInfo, getRealPlaces } from '../services/geminiService';
+
+interface FoodFinderProps {
+  userLocation: GeoLocation | null;
+}
+
+export const FoodFinder: React.FC<FoodFinderProps> = ({ userLocation }) => {
+  const [activeNutriInfo, setActiveNutriInfo] = useState<string | null>(null);
+  const [loadingNutri, setLoadingNutri] = useState(false);
+  const [spots, setSpots] = useState<Place[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    const fetchPlaces = async () => {
+      if (userLocation) {
+        setLoading(true);
+        const realPlaces = await getRealPlaces(userLocation.lat, userLocation.lng, 'food');
+        setSpots(realPlaces);
+        setLoading(false);
+      }
+    };
+    fetchPlaces();
+  }, [userLocation]);
+
+  const handleNutritionCheck = async (name: string) => {
+    setLoadingNutri(true);
+    setActiveNutriInfo(null);
+    const info = await getQuickNutritionInfo(name);
+    alert(`AI Nutrition Insight for ${name}:\n\n${info}`);
+    setLoadingNutri(false);
+  };
+
+  const filteredSpots = spots.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.type.toLowerCase().includes(searchTerm.toLowerCase()));
+  const cafeCount = spots.filter(s => s.type.toLowerCase().includes('cafe') || s.type.toLowerCase().includes('coffee')).length;
+
+  return (
+    <div className="pb-24 space-y-6">
+      
+      {/* Dynamic Status Banner */}
+      {!loading && userLocation && (
+        <div className="bg-gradient-to-r from-orange-100 to-red-100 p-3 rounded-xl border border-orange-200 flex items-center justify-between shadow-sm animate-in slide-in-from-top">
+          <div className="flex items-center gap-2">
+            <MapPin size={18} className="text-orange-600" />
+            <span className="text-sm font-bold text-orange-900">
+               Found {spots.length} food spots nearby!
+            </span>
+          </div>
+          <span className="text-xs bg-white/50 px-2 py-1 rounded text-orange-800 font-semibold">
+            {cafeCount} Cafes
+          </span>
+        </div>
+      )}
+
+      {/* Embedded 3D Map with Colored Pins */}
+      {userLocation && (
+        <ThreeDMapWidget 
+          lat={userLocation.lat}
+          lng={userLocation.lng}
+          isLocating={loading}
+          nearbyPlaces={filteredSpots}
+          onPlaceClick={(place) => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + " " + place.address)}`, '_blank')}
+        />
+      )}
+
+      {/* Legend */}
+      <div className="flex justify-center gap-4 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-orange-500"></div> Cafe</div>
+        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div> Street Food</div>
+        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-green-500"></div> Budget</div>
+      </div>
+
+      {/* Search Bar */}
+      <GlassCard className="flex items-center gap-3 p-3 bg-white/70 sticky top-0 z-20">
+        <Search className="text-red-400" />
+        <input 
+          type="text" 
+          placeholder="Craving pizza, sushi, cheap eats..." 
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          className="bg-transparent w-full focus:outline-none text-red-900 placeholder-red-300"
+        />
+      </GlassCard>
+
+      {/* Quick Filters */}
+      <div className="flex gap-2 text-sm text-red-700 font-semibold overflow-x-auto no-scrollbar pb-2">
+        <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full border border-green-200 whitespace-nowrap">Budget Eats (&lt;₹100)</span>
+        <span className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full border border-orange-200 whitespace-nowrap">Cafes</span>
+        <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full border border-red-200 whitespace-nowrap">Street Food</span>
+      </div>
+
+      <div className="flex justify-between items-center text-red-900 text-sm font-bold px-2">
+        <span>List View</span>
+        <span className="text-red-400 text-xs">Sorted by Distance</span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6">
+        {loading && (
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        )}
+        
+        {!loading && filteredSpots.length === 0 && (
+          <div className="text-center text-red-800/60 py-10 font-medium">
+             No spots found nearby. Try expanding range or moving the map.
+          </div>
+        )}
+
+        {!loading && filteredSpots.map(place => (
+          <GlassCard key={place.id} className="bg-white/80 p-0 overflow-visible group">
+            {place.discount && (
+              <div className="absolute -top-3 -right-3 z-20 bg-yellow-400 text-yellow-900 font-bold px-3 py-1 rounded-lg shadow-lg rotate-3 text-xs border-2 border-white animate-pulse">
+                {place.discount}
+              </div>
+            )}
+            
+            <div className="relative h-48 rounded-t-2xl overflow-hidden">
+              <img src={place.imageUrl} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={place.name} />
+              <div className="absolute top-3 left-3">
+                 <span className={`px-2 py-1 rounded text-xs font-bold text-white shadow-sm ${place.pinColor}`}>
+                    {place.type}
+                 </span>
+              </div>
+              <div className="absolute bottom-0 w-full bg-gradient-to-t from-red-900/90 to-transparent p-4 pt-16">
+                 <h3 className="text-white text-xl font-bold">{place.name}</h3>
+                 <p className="text-red-100 text-sm flex gap-2 items-center">
+                   <MapPin size={14} /> {place.distance} • {place.rating.toFixed(1)} ★
+                 </p>
+                 <p className="text-red-200 text-xs truncate mt-1">{place.address}</p>
+              </div>
+            </div>
+
+            <div className="p-4">
+              <div className="flex gap-2 mb-4 flex-wrap">
+                {place.tags.map(tag => <Badge key={tag} color="bg-red-50 text-red-800 border border-red-100">{tag}</Badge>)}
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                 <button 
+                  onClick={() => handleNutritionCheck(place.name)}
+                  disabled={loadingNutri}
+                  className="py-2.5 rounded-xl border border-red-200 text-red-600 font-bold hover:bg-red-50 text-sm flex justify-center items-center gap-2 transition-colors"
+                >
+                   <Flame size={16} /> Nutrition
+                 </button>
+                 <a 
+                   href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + " " + place.address)}`}
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   className="py-2.5 rounded-xl bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold shadow-lg shadow-red-500/30 text-sm hover:scale-105 transition-transform flex items-center justify-center gap-2"
+                 >
+                   <Navigation size={16} /> Go
+                 </a>
+              </div>
+            </div>
+          </GlassCard>
+        ))}
+      </div>
+    </div>
+  );
+};
