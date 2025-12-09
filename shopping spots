@@ -1,0 +1,140 @@
+
+import React, { useState, useEffect } from 'react';
+import { ShoppingBag, CheckSquare, Square, Tag, Share2, Trash2, MapPin } from 'lucide-react';
+import { GlassCard, SkeletonCard } from './UI';
+import { ShoppingItem, GeoLocation } from '../types';
+import { getRealPlaces } from '../services/geminiService';
+
+interface ShoppingProps {
+  userLocation: GeoLocation | null;
+}
+
+export const ShoppingSavvy: React.FC<ShoppingProps> = ({ userLocation }) => {
+  const [items, setItems] = useState<ShoppingItem[]>(() => {
+    const saved = localStorage.getItem('shoppingItems');
+    if (saved) return JSON.parse(saved);
+    return [
+      { id: '1', name: 'Milk & Eggs', checked: false, price: 150 },
+      { id: '2', name: 'Notebooks', checked: true, price: 80 },
+    ];
+  });
+  const [newItem, setNewItem] = useState('');
+  const [nearbyStore, setNearbyStore] = useState("Local Mart");
+  const [loadingStore, setLoadingStore] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('shoppingItems', JSON.stringify(items));
+  }, [items]);
+
+  useEffect(() => {
+    const fetchStores = async () => {
+        if (userLocation) {
+            setLoadingStore(true);
+            const stores = await getRealPlaces(userLocation.lat, userLocation.lng, 'shopping');
+            if (stores.length > 0) {
+                setNearbyStore(stores[0].name);
+            }
+            setLoadingStore(false);
+        }
+    }
+    fetchStores();
+  }, [userLocation]);
+
+  const toggleItem = (id: string) => {
+    setItems(items.map(i => i.id === id ? { ...i, checked: !i.checked } : i));
+  };
+
+  const addItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newItem) return;
+    setItems([...items, { id: Date.now().toString(), name: newItem, checked: false }]);
+    setNewItem('');
+  };
+
+  const deleteItem = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setItems(items.filter(i => i.id !== id));
+  }
+
+  const total = items.filter(i => !i.checked).reduce((acc, curr) => acc + (curr.price || 0), 0);
+
+  return (
+    <div className="pb-24 space-y-6 animate-in slide-in-from-right duration-500">
+      
+      <div className="flex justify-between items-end">
+        <h2 className="font-bold text-amber-900 text-lg">Smart Shopping</h2>
+        <span className="text-xs text-amber-700 flex items-center gap-1 bg-amber-100 px-2 py-1 rounded-full">
+          <MapPin size={12} /> Near {loadingStore ? 'Locating...' : nearbyStore}
+        </span>
+      </div>
+
+      {/* Deals Ticker */}
+      <div className="bg-gradient-to-r from-orange-400 to-amber-500 rounded-xl p-3 text-white shadow-lg flex items-center gap-3 overflow-hidden relative border border-white/20">
+        <Tag className="animate-pulse shrink-0" />
+        <div className="whitespace-nowrap font-bold text-sm overflow-hidden w-full">
+             <div className="animate-[marquee_12s_linear_infinite] inline-block">
+               🔥 Student Alert: 50% OFF at {nearbyStore} • BOGO at Campus Pizza • 10% Student Discount at TechWorld • 
+             </div>
+        </div>
+      </div>
+
+      {/* List Input */}
+      <GlassCard className="bg-white/60 p-2">
+        <form onSubmit={addItem} className="flex gap-2">
+          <input 
+            value={newItem}
+            onChange={(e) => setNewItem(e.target.value)}
+            placeholder="Add to list..."
+            className="flex-1 bg-transparent p-3 outline-none text-amber-900 placeholder-amber-900/40"
+          />
+          <button type="submit" className="bg-orange-500 text-white p-3 rounded-xl font-bold hover:bg-orange-600 shadow-md transition-colors">
+            Add
+          </button>
+        </form>
+      </GlassCard>
+
+      {/* Shopping List */}
+      <div className="space-y-3">
+        {items.length === 0 && (
+            <div className="text-center text-amber-900/40 py-8 italic">Your list is empty!</div>
+        )}
+        {items.map(item => (
+          <GlassCard 
+            key={item.id} 
+            onClick={() => toggleItem(item.id)}
+            className={`p-4 flex items-center justify-between transition-all duration-300 ${item.checked ? 'opacity-60 grayscale bg-gray-50' : 'bg-white/80 hover:scale-[1.02]'}`}
+          >
+            <div className="flex items-center gap-3">
+              {item.checked ? <CheckSquare className="text-orange-600" /> : <Square className="text-orange-400" />}
+              <span className={`font-semibold text-lg text-amber-900 ${item.checked ? 'line-through decoration-orange-400' : ''}`}>
+                {item.name}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              {item.price && !item.checked && (
+                <span className="font-mono font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded text-sm">~₹{item.price}</span>
+              )}
+              <button 
+                onClick={(e) => deleteItem(e, item.id)}
+                className="text-amber-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-full"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </GlassCard>
+        ))}
+      </div>
+
+      {/* Summary */}
+      <GlassCard className="bg-gradient-to-br from-amber-50 to-orange-50 p-5 border-amber-200">
+        <div className="flex justify-between items-center mb-4">
+          <span className="text-amber-800 font-semibold text-sm uppercase tracking-wide">Est. Total (Pending)</span>
+          <span className="text-3xl font-bold text-orange-600">₹{total}</span>
+        </div>
+        <button className="w-full bg-white text-orange-600 py-3.5 rounded-xl font-bold border border-orange-200 shadow-sm flex items-center justify-center gap-2 hover:bg-orange-50 transition-colors hover:shadow-md">
+          <Share2 size={18} /> Split with Roommates
+        </button>
+      </GlassCard>
+    </div>
+  );
+};
