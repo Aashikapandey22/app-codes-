@@ -1,0 +1,200 @@
+
+import React, { useState, useEffect } from 'react';
+import { Search, MapPin, Navigation, Footprints, Bus, Car, ArrowRight, Radar } from 'lucide-react';
+import { GlassCard, SkeletonCard } from './UI';
+import { Place, GeoLocation, RouteOption, TravelMode } from '../types';
+import { searchPlacesGlobal, getRouteOptions } from '../services/geminiService';
+
+interface SmartNavigationProps {
+  userLocation: GeoLocation | null;
+  onDestinationSelect: (place: Place | null) => void;
+  initialPlace?: Place | null;
+}
+
+export const SmartNavigation: React.FC<SmartNavigationProps> = ({ userLocation, onDestinationSelect, initialPlace }) => {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<Place[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
+  const [routes, setRoutes] = useState<RouteOption[]>([]);
+  const [activeMode, setActiveMode] = useState<TravelMode>('DRIVING');
+
+  // Handle Initial Place (Instant Navigation)
+  useEffect(() => {
+    if (initialPlace && userLocation) {
+      // If an initial place is passed (e.g. map click), select it immediately
+      setSelectedPlace(initialPlace);
+      // Don't need to notify parent as parent passed it down, but for consistency:
+      onDestinationSelect(initialPlace); 
+      calculateRoute(initialPlace);
+    }
+  }, [initialPlace]);
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!query || !userLocation) {
+        alert("Waiting for GPS lock...");
+        return;
+    }
+    
+    setLoading(true);
+    setResults([]);
+    setSelectedPlace(null);
+    onDestinationSelect(null);
+    
+    const places = await searchPlacesGlobal(query, userLocation.lat, userLocation.lng);
+    setResults(places);
+    setLoading(false);
+  };
+
+  const calculateRoute = async (place: Place) => {
+    if (userLocation && place.coordinates) {
+      setLoading(true);
+      const options = await getRouteOptions(
+        userLocation.lat, userLocation.lng,
+        place.coordinates.lat, place.coordinates.lng
+      );
+      setRoutes(options);
+      const rec = options.find(o => o.recommended);
+      if (rec) setActiveMode(rec.mode);
+      setLoading(false);
+    }
+  };
+
+  const selectPlace = async (place: Place) => {
+    setSelectedPlace(place);
+    onDestinationSelect(place);
+    await calculateRoute(place);
+  };
+
+  const getModeIcon = (mode: TravelMode) => {
+    switch(mode) {
+      case 'WALKING': return <Footprints size={18} />;
+      case 'TRANSIT': return <Bus size={18} />;
+      case 'DRIVING': return <Car size={18} />;
+    }
+  };
+
+  const activeRoute = routes.find(r => r.mode === activeMode);
+
+  return (
+    <div className="pb-24 space-y-4">
+      {/* Search Input */}
+      <GlassCard className="p-2 flex gap-2 sticky top-0 z-20 bg-white/80 backdrop-blur-xl">
+        <input 
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Where to? (e.g. Starbucks, Central Park)"
+          className="flex-1 bg-transparent p-3 outline-none text-slate-800 placeholder-slate-400 font-medium"
+        />
+        <button 
+          onClick={handleSearch}
+          className="bg-indigo-600 text-white p-3 rounded-xl shadow-lg hover:bg-indigo-700 transition-colors"
+        >
+          <Search size={20} />
+        </button>
+      </GlassCard>
+
+      {/* GPS Status Indicator */}
+      <div className="px-2 flex items-center justify-between text-xs text-indigo-700 font-semibold">
+          <div className="flex items-center gap-1">
+              <Radar size={12} className={loading ? "animate-spin" : ""} />
+              GPS Lock: <span className="font-mono">{userLocation?.lat.toFixed(4)}, {userLocation?.lng.toFixed(4)}</span>
+          </div>
+          <span className="bg-indigo-100 px-2 py-0.5 rounded-full border border-indigo-200">Radius: 5km</span>
+      </div>
+
+      {/* Results List (Only show if no place selected) */}
+      {!selectedPlace && (
+        <div className="space-y-3">
+          {loading && <SkeletonCard />}
+          {results.map(place => (
+            <GlassCard key={place.id} onClick={() => selectPlace(place)} className="p-4 flex items-center gap-4 hover:bg-white/60 cursor-pointer">
+              <div className="bg-indigo-100 p-3 rounded-full text-indigo-600">
+                <MapPin size={24} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800">{place.name}</h3>
+                <p className="text-sm text-slate-500">{place.address}</p>
+                <div className="flex gap-2 mt-1">
+                   <span className="text-xs font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded">{place.distance}</span>
+                   <span className="text-xs text-slate-400">★ {place.rating}</span>
+                </div>
+              </div>
+            </GlassCard>
+          ))}
+          {results.length === 0 && !loading && query && (
+             <div className="text-center text-slate-400 py-10">
+               No places found nearby. Try a broader search.
+             </div>
+          )}
+           {results.length === 0 && !loading && !query && (
+             <div className="text-center text-slate-400 py-10 opacity-50">
+               <Navigation size={48} className="mx-auto mb-2" />
+               <p>Search for a place or tap a pin on the dashboard.</p>
+             </div>
+          )}
+        </div>
+      )}
+
+      {/* Route Dashboard */}
+      {selectedPlace && activeRoute && (
+        <div className="animate-in slide-in-from-bottom duration-500 space-y-4">
+          <div className="flex justify-between items-center px-2">
+            <h2 className="font-bold text-xl text-slate-800">Route to {selectedPlace.name}</h2>
+            <button onClick={() => { setSelectedPlace(null); onDestinationSelect(null); }} className="text-xs text-indigo-600 font-bold">CHANGE</button>
+          </div>
+
+          {/* Mode Selector Cards */}
+          <div className="grid grid-cols-3 gap-2">
+            {routes.map(route => (
+              <button
+                key={route.mode}
+                onClick={() => setActiveMode(route.mode)}
+                className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-1 ${
+                  activeMode === route.mode 
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md' 
+                  : 'border-transparent bg-white/50 text-slate-400'
+                }`}
+              >
+                {getModeIcon(route.mode)}
+                <span className="text-[10px] font-bold uppercase">{route.mode}</span>
+                <span className="text-sm font-bold">{route.duration}</span>
+                {route.recommended && <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded">BEST</span>}
+              </button>
+            ))}
+          </div>
+
+          {/* Details Card */}
+          <GlassCard className="p-6 bg-gradient-to-br from-indigo-600 to-purple-700 text-white border-none">
+             <div className="flex justify-between items-start mb-6">
+                <div>
+                  <p className="text-indigo-200 text-xs font-bold uppercase mb-1">Total Distance</p>
+                  <h3 className="text-3xl font-bold">{activeRoute.distance}</h3>
+                </div>
+                <div className="text-right">
+                   <p className="text-indigo-200 text-xs font-bold uppercase mb-1">Est. Cost</p>
+                   <h3 className="text-3xl font-bold">{activeRoute.cost}</h3>
+                </div>
+             </div>
+
+             <div className="space-y-4 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+               {activeRoute.steps.map((step, i) => (
+                 <div key={i} className="flex gap-3 items-center">
+                    <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold shrink-0">
+                      {i + 1}
+                    </div>
+                    <p className="text-sm font-medium opacity-90">{step}</p>
+                 </div>
+               ))}
+             </div>
+
+             <button className="w-full mt-6 bg-white text-indigo-700 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform">
+               <Navigation size={18} fill="currentColor" /> Start Turn-by-Turn
+             </button>
+          </GlassCard>
+        </div>
+      )}
+    </div>
+  );
+};
